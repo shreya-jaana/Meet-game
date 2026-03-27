@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fight For Us - Happy Anniversary</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+Devanagari&family=Space+Mono&display=swap');
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #0f172a; /* Deep night sky */
+            color: white;
+            font-family: 'Space Mono', monospace;
+            overflow: hidden;
+        }
+
+        /* The Game Canvas */
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Story & Poetry Overlays */
+        #story-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(15, 23, 42, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+            text-align: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #story-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .hindi-quote {
+            font-family: 'Noto Serif Devanagari', serif;
+            font-size: 2rem;
+            color: #FFD6A5;
+            margin-bottom: 20px;
+            line-height: 1.5;
+            max-width: 800px;
+        }
+
+        .english-sub {
+            color: #94a3b8;
+            font-size: 1.2rem;
+            margin-bottom: 40px;
+        }
+
+        .btn-continue {
+            padding: 15px 30px;
+            background: transparent;
+            border: 2px solid #FFD6A5;
+            color: #FFD6A5;
+            font-family: 'Space Mono', monospace;
+            font-size: 1.2rem;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: all 0.3s ease;
+        }
+
+        .btn-continue:hover {
+            background: #FFD6A5;
+            color: #0f172a;
+        }
+
+        /* Controls UI */
+        #controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.9rem;
+            line-height: 1.8;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="controls">
+        🎮 CONTROLS:<br>
+        [ ← ] [ → ] to Run<br>
+        [ UP ARROW ] to Jump<br>
+        [ SPACEBAR ] to Swing Sword
+    </div>
+
+    <div id="story-overlay" class="active">
+        <div class="hindi-quote" id="quote-text">
+            तुमसे मिलना कोई इत्तेफ़ाक नहीं था,<br>
+            तुम वो ख़्वाब थे जो नाम नहीं जानता था।
+        </div>
+        <div class="english-sub" id="sub-text">
+            Ready to fight the distance?
+        </div>
+        <button class="btn-continue" id="start-btn">PRESS START</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('story-overlay');
+        const quoteText = document.getElementById('quote-text');
+        const subText = document.getElementById('sub-text');
+        const startBtn = document.getElementById('start-btn');
+
+        // Resize canvas to fit screen
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        // Game State
+        let gameState = 'paused'; // 'playing', 'paused', 'finished'
+        let cameraX = 0;
+        const groundY = canvas.height - 150;
+
+        // Player (The Boy)
+        const player = {
+            x: 100,
+            y: groundY,
+            width: 50,
+            height: 50,
+            speed: 7,
+            vy: 0,
+            gravity: 0.8,
+            jumpPower: -16,
+            isGrounded: true,
+            emoji: '🏃🏻‍♂️',
+            attacking: false,
+            attackTimer: 0
+        };
+
+        // The Girl (Destination)
+        const destination = {
+            x: 6000, // Distance to the end
+            y: groundY,
+            emoji: '🧍🏻‍♀️'
+        };
+
+        // Enemies / Obstacles (The things keeping them apart)
+        let enemies = [
+            { x: 1000, y: groundY, emoji: '🌪️', type: 'The Distance', active: true },
+            { x: 2500, y: groundY, emoji: '🗣️', type: 'The Arguments', active: true },
+            { x: 4000, y: groundY, emoji: '🕰️', type: 'The Long Nights', active: true }
+        ];
+
+        // Story triggers tied to defeating enemies
+        const stories = [
+            {
+                hindi: "दूरी ने चाहा कि हम बिखर जाएं,<br>पर तुम्हारी याद ने हर बार जोड़ा।",
+                english: "You defeated The Distance. Every mile between us just makes me hold on tighter."
+            },
+            {
+                hindi: "तुमसे लड़ना भी एक क़िस्म की क़रीबी थी,<br>नफ़रत तो उससे होती है जो दिल में नहीं।",
+                english: "You defeated The Arguments. We fight because we care too much to pretend."
+            },
+            {
+                hindi: "रात को चाँद देखता हूं,<br>सोचता हूं तुम भी देख रही होगी — बस इतना काफ़ी है।",
+                english: "You defeated The Long Nights. Only a little further left to go."
+            }
+        ];
+        let storyIndex = 0;
+
+        // Keyboard Input
+        const keys = {};
+        window.addEventListener('keydown', (e) => {
+            keys[e.code] = true;
+            if (e.code === 'Space' && gameState === 'playing' && !player.attacking) {
+                player.attacking = true;
+                player.attackTimer = 15; // Sword stays visible for 15 frames
+            }
+        });
+        window.addEventListener('keyup', (e) => keys[e.code] = false);
+
+        // Overlay Button Logic
+        startBtn.addEventListener('click', () => {
+            overlay.classList.remove('active');
+            
+            if (gameState === 'finished') {
+                // If the game is over, we don't unpause. Just let them look at the screen.
+            } else {
+                gameState = 'playing';
+                gameLoop();
+            }
+        });
+
+        function triggerStory() {
+            gameState = 'paused';
+            quoteText.innerHTML = stories[storyIndex].hindi;
+            subText.innerHTML = stories[storyIndex].english;
+            startBtn.innerText = "KEEP RUNNING";
+            overlay.classList.add('active');
+            storyIndex++;
+        }
+
+        function triggerEnding() {
+            gameState = 'finished';
+            quoteText.innerHTML = "ये दूरी आज ख़त्म हुई।<br>Happy First Anniversary, Sarib.";
+            subText.innerHTML = "March 28, 2026. You fought through the distance, the time, and the static. You reached me.";
+            startBtn.innerText = "I LOVE YOU";
+            overlay.classList.add('active');
+        }
+
+        // Main Game Update Logic
+        function update() {
+            if (gameState !== 'playing') return;
+
+            // Horizontal Movement
+            if (keys['ArrowRight']) player.x += player.speed;
+            if (keys['ArrowLeft']) player.x -= player.speed;
+
+            // Don't let player go backward past 0
+            if (player.x < 50) player.x = 50;
+
+            // Jumping
+            if (keys['ArrowUp'] && player.isGrounded) {
+                player.vy = player.jumpPower;
+                player.isGrounded = false;
+            }
+
+            // Gravity
+            player.y += player.vy;
+            if (player.y < groundY) {
+                player.vy += player.gravity; // Falling
+            } else {
+                player.y = groundY;
+                player.vy = 0;
+                player.isGrounded = true;
+            }
+
+            // Sword Attack Logic
+            if (player.attacking) {
+                player.attackTimer--;
+                if (player.attackTimer <= 0) player.attacking = false;
+            }
+
+            // Camera follows player
+            cameraX = player.x - canvas.width / 4;
+            if (cameraX < 0) cameraX = 0;
+
+            // Check collision with enemies
+            enemies.forEach((enemy, index) => {
+                if (enemy.active) {
+                    // Distance between player and enemy
+                    let dist = enemy.x - player.x;
+                    
+                    // If attacking and close enough, defeat enemy
+                    if (player.attacking && dist > 0 && dist < 120 && Math.abs(player.y - enemy.y) < 50) {
+                        enemy.active = false;
+                        triggerStory(); // Show poetry
+                    }
+                    
+                    // If player touches enemy without attacking, get pushed back (punishment)
+                    if (!player.attacking && Math.abs(dist) < 40 && Math.abs(player.y - enemy.y) < 40) {
+                        player.x -= 150; // Knockback
+                    }
+                }
+            });
+
+            // Check Win Condition (Reached the girl)
+            if (player.x >= destination.x - 60 && gameState !== 'finished') {
+                triggerEnding();
+            }
+        }
+
+        // Rendering / Drawing
+        function draw() {
+            // Clear screen
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Ground Line
+            ctx.beginPath();
+            ctx.moveTo(0, groundY + 10);
+            ctx.lineTo(canvas.width, groundY + 10);
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Set Emoji Font Size
+            ctx.font = '60px Arial';
+
+            // Draw Background Scenery (Stars/City blur that scrolls slowly)
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            for(let i=0; i<10; i++) {
+                ctx.fillText('✨', (i * 800) - (cameraX * 0.2), 200);
+            }
+
+            // Draw Destination (The Girl)
+            ctx.fillText(destination.emoji, destination.x - cameraX, destination.y);
+            
+            // Draw floating hearts around her
+            ctx.font = '30px Arial';
+            ctx.fillText('💛', destination.x - cameraX + 15, destination.y - 60 + Math.sin(Date.now() / 300) * 10);
+
+            // Draw Enemies
+            ctx.font = '60px Arial';
+            enemies.forEach(enemy => {
+                if (enemy.active) {
+                    ctx.fillText(enemy.emoji, enemy.x - cameraX, enemy.y);
+                    
+                    // Enemy health/name bar
+                    ctx.font = '16px Space Mono';
+                    ctx.fillStyle = '#ef4444';
+                    ctx.fillText(enemy.type, enemy.x - cameraX - 10, enemy.y - 60);
+                    ctx.font = '60px Arial'; // reset font
+                }
+            });
+
+            // Draw Player
+            ctx.fillText(player.emoji, player.x - cameraX, player.y);
+
+            // Draw Sword if attacking
+            if (player.attacking) {
+                ctx.save();
+                ctx.translate(player.x - cameraX + 50, player.y - 20);
+                // Animate sword swing arc
+                let swingAngle = (15 - player.attackTimer) * 0.1; 
+                ctx.rotate(swingAngle);
+                ctx.fillText('🗡️', 0, 0);
+                ctx.restore();
+                
+                // Draw attack flash effect
+                ctx.fillStyle = 'rgba(255, 214, 165, 0.5)';
+                ctx.beginPath();
+                ctx.arc(player.x - cameraX + 80, player.y - 10, 40, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // The Game Loop
+        function gameLoop() {
+            update();
+            draw();
+            if (gameState === 'playing') {
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // Initial Draw to setup background before start
+        draw();
+
+    </script>
+</body>
+</html>
