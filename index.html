@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Fight For Us - Happy Anniversary Sarib</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+Devanagari&family=Space+Mono&display=swap');
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: #0f172a; 
+            color: white;
+            font-family: 'Space Mono', monospace;
+            overflow: hidden; 
+            touch-action: none; 
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #story-overlay {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100vw; height: 100vh;
+            background: rgba(15, 23, 42, 0.95);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 30;
+            text-align: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        #story-overlay.active {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .hindi-quote {
+            font-family: 'Noto Serif Devanagari', serif;
+            font-size: 1.8rem;
+            color: #FFD6A5;
+            margin-bottom: 20px;
+            line-height: 1.5;
+            max-width: 90vw;
+        }
+
+        .english-sub {
+            color: #94a3b8;
+            font-size: 1rem;
+            margin-bottom: 40px;
+            max-width: 90vw;
+        }
+
+        .btn-continue {
+            padding: 15px 30px;
+            background: rgba(255, 214, 165, 0.1);
+            border: 2px solid #FFD6A5;
+            color: #FFD6A5;
+            font-family: 'Space Mono', monospace;
+            font-size: 1.2rem;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        #mobile-controls {
+            position: absolute;
+            bottom: 30px;
+            left: 0;
+            width: 100vw;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 20px;
+            box-sizing: border-box;
+            z-index: 20;
+            pointer-events: none; 
+        }
+
+        .control-group {
+            display: flex;
+            gap: 15px;
+            pointer-events: auto; 
+        }
+
+        .btn-game {
+            width: 65px;
+            height: 65px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 28px;
+            color: rgba(255, 255, 255, 0.7);
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+        }
+
+        .btn-game:active {
+            background: rgba(255, 255, 255, 0.3);
+            transform: scale(0.95);
+        }
+
+        #desktop-instructions {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            color: rgba(255, 255, 255, 0.3);
+            font-size: 0.8rem;
+            pointer-events: none;
+        }
+        @media (max-width: 768px) {
+            #desktop-instructions { display: none; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="desktop-instructions">PC: Arrow Keys + Spacebar</div>
+
+    <div id="mobile-controls">
+        <div class="control-group">
+            <div class="btn-game" id="btn-left">◀</div>
+            <div class="btn-game" id="btn-right">▶</div>
+        </div>
+        <div class="control-group">
+            <div class="btn-game" id="btn-sword">🗡️</div>
+            <div class="btn-game" id="btn-jump">⬆</div>
+        </div>
+    </div>
+
+    <div id="story-overlay" class="active">
+        <div class="hindi-quote" id="quote-text">
+            तुम्हारी आवाज़ मेरी सबसे सुकून वाली जगह है,<br>
+            मैं हर फासला मिटा कर तुम्हारे पास आ रही हूँ।
+        </div>
+        <div class="english-sub" id="sub-text">
+            I am coming to you. Ready to guide me?
+        </div>
+        <button class="btn-continue" id="start-btn">PRESS START</button>
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const overlay = document.getElementById('story-overlay');
+        const quoteText = document.getElementById('quote-text');
+        const subText = document.getElementById('sub-text');
+        const startBtn = document.getElementById('start-btn');
+
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        let gameState = 'paused';
+        let cameraX = 0;
+        const getGroundY = () => canvas.height - 180;
+
+        // Player is now the Girl
+        const player = {
+            x: window.innerWidth / 4,
+            y: getGroundY(),
+            speed: 5,
+            vy: 0,
+            gravity: 0.6,
+            jumpPower: -12,
+            isGrounded: true,
+            emoji: '🏃🏻‍♀️', 
+            attacking: false,
+            attackTimer: 0
+        };
+
+        // Destination is now the Boy
+        const destination = { x: 3500, emoji: '🧍🏻‍♂️' };
+
+        let enemies = [
+            { x: 1000, y: getGroundY(), emoji: '🌪️', type: 'Distance', active: true },
+            { x: 2000, y: getGroundY(), emoji: '🗣️', type: 'Arguments', active: true },
+            { x: 3000, y: getGroundY(), emoji: '🕰️', type: 'Silence', active: true }
+        ];
+
+        // Quotes rewritten from her perspective
+        const stories = [
+            { hindi: "दिल्ली से जम्मू का फासला मीलों में है,<br>पर तुम्हारी एक कॉल मुझे तुम्हारे पास ले आती है।", english: "The distance from Delhi to Jammu is nothing when you hold my heart." },
+            { hindi: "हमारी लड़ाइयाँ भी मुझे तुमसे दूर नहीं कर सकतीं,<br>मेरा गुस्सा तुम्हारे प्यार के आगे हमेशा हार जाता है।", english: "We fight because we care. But my love for you is always louder." },
+            { hindi: "उन लंबी रातों में जब बात नहीं होती,<br>मैं तुम्हारी दी हुई यादों को ओढ़ कर सो जाती हूँ।", english: "Every silent night just made me realize how much I need your voice." }
+        ];
+        let storyIndex = 0;
+
+        const keys = { left: false, right: false, jump: false, attack: false };
+
+        const bindTouch = (id, key) => {
+            const btn = document.getElementById(id);
+            btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
+            btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
+            btn.addEventListener('mousedown', (e) => { keys[key] = true; });
+            btn.addEventListener('mouseup', (e) => { keys[key] = false; });
+            btn.addEventListener('mouseleave', (e) => { keys[key] = false; });
+        };
+
+        bindTouch('btn-left', 'left');
+        bindTouch('btn-right', 'right');
+        bindTouch('btn-jump', 'jump');
+        
+        const swordBtn = document.getElementById('btn-sword');
+        const triggerAttack = (e) => {
+            if(e) e.preventDefault();
+            if (gameState === 'playing' && !player.attacking) {
+                player.attacking = true;
+                player.attackTimer = 20; 
+            }
+        };
+        swordBtn.addEventListener('touchstart', triggerAttack);
+        swordBtn.addEventListener('mousedown', triggerAttack);
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'ArrowLeft') keys.left = true;
+            if (e.code === 'ArrowRight') keys.right = true;
+            if (e.code === 'ArrowUp') keys.jump = true;
+            if (e.code === 'Space') triggerAttack();
+        });
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'ArrowLeft') keys.left = false;
+            if (e.code === 'ArrowRight') keys.right = false;
+            if (e.code === 'ArrowUp') keys.jump = false;
+        });
+
+        startBtn.addEventListener('click', () => {
+            overlay.classList.remove('active');
+            if (gameState !== 'finished') {
+                gameState = 'playing';
+                requestAnimationFrame(gameLoop); 
+            }
+        });
+
+        function triggerStory() {
+            gameState = 'paused';
+            quoteText.innerHTML = stories[storyIndex].hindi;
+            subText.innerHTML = stories[storyIndex].english;
+            startBtn.innerText = "KEEP RUNNING";
+            overlay.classList.add('active');
+            storyIndex++;
+            keys.right = false; keys.left = false;
+        }
+
+        function triggerEnding() {
+            gameState = 'finished';
+            quoteText.innerHTML = "ये दूरी आज ख़त्म हुई।<br>Happy First Anniversary, Sarib.";
+            subText.innerHTML = "March 28, 2026. I fought through the distance, the arguments, and the time. Just to reach you.";
+            startBtn.innerText = "I LOVE YOU";
+            overlay.classList.add('active');
+        }
+
+        function update() {
+            if (gameState !== 'playing') return;
+
+            let groundY = getGroundY();
+
+            if (keys.right) player.x += player.speed;
+            if (keys.left) player.x -= player.speed;
+            if (player.x < 50) player.x = 50; 
+
+            if (keys.jump && player.isGrounded) {
+                player.vy = player.jumpPower;
+                player.isGrounded = false;
+            }
+
+            player.y += player.vy;
+            if (player.y < groundY) {
+                player.vy += player.gravity;
+            } else {
+                player.y = groundY;
+                player.vy = 0;
+                player.isGrounded = true;
+            }
+
+            if (player.attacking) {
+                player.attackTimer--;
+                if (player.attackTimer <= 0) player.attacking = false;
+            }
+
+            cameraX = player.x - window.innerWidth / 3;
+            if (cameraX < 0) cameraX = 0;
+
+            enemies.forEach((enemy) => {
+                if (enemy.active) {
+                    let dist = enemy.x - player.x;
+                    
+                    if (player.attacking && dist > 0 && dist < 120 && Math.abs(player.y - enemy.y) < 80) {
+                        enemy.active = false;
+                        triggerStory(); 
+                    }
+                    
+                    if (!player.attacking && Math.abs(dist) < 50 && Math.abs(player.y - enemy.y) < 50) {
+                        player.x -= 100; 
+                    }
+                }
+            });
+
+            if (player.x >= destination.x - 80 && gameState !== 'finished') {
+                triggerEnding();
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            let groundY = getGroundY();
+
+            ctx.beginPath();
+            ctx.moveTo(0, groundY + 10);
+            ctx.lineTo(canvas.width, groundY + 10);
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.font = '30px Arial';
+            for(let i=0; i<15; i++) {
+                ctx.fillText('✨', (i * 400) - (cameraX * 0.2), 150 + (i % 2 === 0 ? 50 : 0));
+            }
+
+            ctx.font = '60px Arial';
+            ctx.fillText(destination.emoji, destination.x - cameraX, groundY);
+            ctx.font = '30px Arial';
+            ctx.fillText('💛', destination.x - cameraX + 15, groundY - 60 + Math.sin(Date.now() / 300) * 10);
+
+            ctx.font = '60px Arial';
+            enemies.forEach(enemy => {
+                if (enemy.active) {
+                    ctx.fillText(enemy.emoji, enemy.x - cameraX, groundY);
+                    ctx.font = '14px Space Mono';
+                    ctx.fillStyle = '#ef4444';
+                    ctx.fillText(enemy.type, enemy.x - cameraX - 5, groundY - 60);
+                    ctx.font = '60px Arial';
+                }
+            });
+
+            ctx.fillText(player.emoji, player.x - cameraX, player.y);
+
+            if (player.attacking) {
+                ctx.save();
+                ctx.translate(player.x - cameraX + 50, player.y - 20);
+                let swingAngle = (20 - player.attackTimer) * 0.15; 
+                ctx.rotate(swingAngle);
+                ctx.fillText('🗡️', 0, 0);
+                ctx.restore();
+                
+                ctx.fillStyle = 'rgba(255, 214, 165, 0.3)';
+                ctx.beginPath();
+                ctx.arc(player.x - cameraX + 80, player.y - 10, 50, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function gameLoop() {
+            if (gameState === 'playing') {
+                update();
+                draw();
+                requestAnimationFrame(gameLoop);
+            }
+        }
+
+        resizeCanvas();
+        draw();
+
+    </script>
+</body>
+</html>
